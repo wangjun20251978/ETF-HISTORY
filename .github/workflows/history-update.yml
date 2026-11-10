@@ -1,0 +1,42 @@
+name: ETF历史回看·每日4次归档
+
+on:
+  schedule:
+    # 北京时间 08:35 / 11:35 / 15:35 / 20:35（UTC+8，cron 用 UTC）
+    - cron: '35 0 * * *'    # 北京 08:35  盘前
+    - cron: '35 3 * * *'    # 北京 11:35  午间
+    - cron: '35 7 * * *'    # 北京 15:35  收盘后
+    - cron: '35 12 * * *'   # 北京 20:35  晚间
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ETF-HISTORY-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Shanghai
+    steps:
+      - name: 拉取仓库
+        uses: actions/checkout@v4
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 抓取K线并归档当日快照
+        run: python etf_history.py
+
+      - name: 提交更新
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          git commit -m "auto: ETF历史快照 $(date +'%Y-%m-%d %H:%M')" || echo "no changes"
+          git push

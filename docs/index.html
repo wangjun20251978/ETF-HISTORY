@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ETF 历史回看 · 三因子轮动</title>
+<style>
+:root{
+  --bg:#0d1117;--card:#161b22;--card2:#1c2128;--bd:#30363d;--t:#c9d1d9;--td:#8b949e;
+  --up:#f85149;--down:#3fb950;--b:#58a6ff;--y:#d29922;--p:#a371f7;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--t);padding:16px;max-width:1240px;margin:0 auto;line-height:1.5}
+.hd{text-align:center;margin-bottom:14px}
+.hd h1{font-size:23px;color:var(--b);font-weight:700;letter-spacing:.5px}
+.hd .sub{font-size:12px;color:var(--td);margin-top:6px}
+.hd .sub b{color:var(--t)}
+.panel{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:14px}
+/* 控制条 */
+.ctrl{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-size:11px;color:var(--td)}
+select,input{background:var(--card2);color:var(--t);border:1px solid var(--bd);border-radius:7px;padding:8px 10px;font-size:13px;font-family:inherit;outline:none}
+select:focus{border-color:var(--b)}
+select{min-width:130px}
+.btn{background:var(--card2);color:var(--t);border:1px solid var(--bd);border-radius:7px;padding:8px 14px;font-size:13px;cursor:pointer;font-family:inherit;transition:.15s}
+.btn:hover{border-color:var(--b);color:var(--b)}
+.btn.pri{background:#1f6feb;border-color:#1f6feb;color:#fff;font-weight:600}
+.btn.pri:hover{background:#388bfd;color:#fff}
+.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.chip{background:var(--card2);border:1px solid var(--bd);border-radius:14px;padding:5px 12px;font-size:12px;cursor:pointer;color:var(--td);transition:.15s;user-select:none}
+.chip:hover{border-color:var(--b);color:var(--b)}
+.chip.on{background:#1f6feb22;border-color:var(--b);color:var(--b)}
+/* 卡片 */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
+.kpi .k{font-size:11px;color:var(--td);margin-bottom:6px}
+.kpi .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.kpi .x{font-size:11px;color:var(--td);margin-top:3px}
+.up{color:var(--up)}.down{color:var(--down)}.flat{color:var(--td)}
+/* 图 */
+.chartbox{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 8px 6px;margin-bottom:14px}
+.chartbox .ct{font-size:12px;color:var(--td);padding:0 6px 6px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+svg{display:block;width:100%;height:auto}
+/* Tab */
+.tabs{display:flex;gap:4px;margin-bottom:-1px;overflow-x:auto}
+.tab{background:transparent;border:1px solid transparent;border-bottom:none;color:var(--td);padding:9px 16px;font-size:13px;cursor:pointer;border-radius:8px 8px 0 0;white-space:nowrap;font-family:inherit}
+.tab.on{background:var(--card);border-color:var(--bd);color:var(--b);font-weight:600}
+.tabbody{background:var(--card);border:1px solid var(--bd);border-radius:0 10px 10px 10px;padding:12px;overflow:hidden}
+/* 表 */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+th{color:var(--td);font-weight:500;font-size:11px;padding:8px 7px;text-align:right;border-bottom:1px solid var(--bd);white-space:nowrap;position:sticky;top:0;background:var(--card)}
+th:first-child,th.l{text-align:left}
+td{padding:8px 7px;text-align:right;border-bottom:1px solid #21262d;white-space:nowrap}
+td.l{text-align:left}
+tr.dr{cursor:pointer}
+tr.dr:hover{background:#1c2128}
+tr.dr .arw{color:var(--td);font-size:10px;display:inline-block;transition:.15s;width:12px}
+tr.dr.open .arw{transform:rotate(90deg);color:var(--b)}
+tr.sub td{background:#0f1318;padding:0}
+.subbox{padding:10px 8px 14px}
+.subhd{font-size:11px;color:var(--td);padding:4px 6px 8px}
+.tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;line-height:17px}
+.tag.bull{background:#f8514922;color:var(--up)}
+.tag.neu{background:#d2992222;color:var(--y)}
+.tag.bear{background:#3fb95022;color:var(--down)}
+.tag.ok{background:#3fb95022;color:var(--down)}
+.tag.no{background:#30363d55;color:var(--td)}
+.rk{display:inline-block;width:19px;height:19px;line-height:19px;text-align:center;border-radius:5px;font-size:11px;background:var(--card2);color:var(--td)}
+.rk.r1{background:var(--up);color:#fff;font-weight:700}
+.rk.r2{background:#f0883e;color:#fff;font-weight:600}
+.rk.r3{background:var(--y);color:#fff;font-weight:600}
+.hold{font-weight:600;color:var(--b)}
+.mini{color:var(--td);font-size:11px}
+.empty{text-align:center;color:var(--td);padding:36px 10px;font-size:13px}
+.bar{height:4px;border-radius:2px;background:var(--bd);overflow:hidden;width:52px;display:inline-block;vertical-align:middle}
+.bar i{display:block;height:100%;background:var(--b)}
+.ft{text-align:center;color:#484f58;font-size:11px;padding:16px 0 6px;line-height:1.8}
+.loading{text-align:center;padding:40px;color:var(--td);font-size:13px}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--bd);border-top-color:var(--b);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:7px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(max-width:640px){
+  body{padding:10px}
+  .hd h1{font-size:19px}
+  .fld,select{flex:1;min-width:0}
+  select{width:100%;min-width:0}
+  .ctrl{align-items:stretch}
+  .kpi .v{font-size:17px}
+}
+</style>
+</head>
+<body>
+
+<div class="hd">
+  <h1>📅 ETF 历史回看 · 三因子轮动</h1>
+  <div class="sub" id="subinfo">加载中…</div>
+</div>
+
+<div class="panel">
+  <div class="ctrl">
+    <div class="fld"><label>起始日期</label><select id="dStart"></select></div>
+    <div class="fld"><label>结束日期</label><select id="dEnd"></select></div>
+    <div class="fld"><label>快捷区间</label>
+      <div class="quick" id="quick">
+        <span class="chip" data-n="5">近5日</span>
+        <span class="chip" data-n="10">近10日</span>
+        <span class="chip" data-n="20">近20日</span>
+        <span class="chip" data-n="60">近60日</span>
+        <span class="chip" data-n="0">全部</span>
+      </div>
+    </div>
+    <button class="btn pri" id="btnGo">🔄 重新生成</button>
+    <button class="btn" id="btnExp">⬇ 导出本区间</button>
+  </div>
+</div>
+
+<div class="cards" id="kpis"></div>
+
+<div class="chartbox">
+  <div class="ct"><span>每日风控通过数（0-48）· 底色为大盘状态</span><span id="charttip"></span></div>
+  <div id="chart"></div>
+</div>
+
+<div class="tabs">
+  <button class="tab on" data-t="daily">📋 每日概览</button>
+  <button class="tab" data-t="rank">🏆 区间 ETF 排行</button>
+  <button class="tab" data-t="flip">🔁 推荐切换轨迹</button>
+</div>
+<div class="tabbody" id="tabbody"><div class="loading"><span class="spin"></span>加载中…</div></div>
+
+<div class="ft">
+  数据每交易日自动更新 4 次（北京时间 08:35 / 11:35 / 15:35 / 20:35）<br>
+  ETF-ROTATION-PRO 同口径 · M动量40% + V相对低位30% + F资金流30% + 三重风控 · 红涨绿跌<br>
+  历史数据不可改写，仅供复盘参考，不构成投资建议
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const cache = {};        // date -> snapshot
+let IDX = null, DATES = [], CUR = {start:'', end:''}, TAB = 'daily', BUNDLE = null;
+const OPEN = new Set();
+
+const fmt = (v, d=2) => (v==null||isNaN(v)) ? '—' : Number(v).toFixed(d);
+const cls = v => v==null ? 'flat' : (v>0 ? 'up' : v<0 ? 'down' : 'flat');
+const sgn = (v,d=2) => v==null ? '—' : (v>0?'+':'') + Number(v).toFixed(d) + '%';
+const WD = ['日','一','二','三','四','五','六'];
+const wd = d => '周' + WD[new Date(d+'T00:00:00').getDay()];
+const stTag = s => `<span class="tag ${s==='强势'?'bull':s==='弱势'?'bear':'neu'}">${s||'—'}</span>`;
+
+async function loadDay(d){
+  if (cache[d]) return cache[d];
+  if (BUNDLE && BUNDLE.days && BUNDLE.days[d]) return (cache[d] = BUNDLE.days[d]);
+  try{
+    const r = await fetch(`data/${d}.json`, {cache:'no-cache'});
+    if(!r.ok) return null;
+    cache[d] = await r.json();
+    return cache[d];
+  }catch(e){ return null; }
+}
+
+/* 本地双击(file://)兜底: 浏览器禁止 fetch, 改用脚本注入的 bundle */
+function injectJS(src){
+  return new Promise((res, rej)=>{
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+/* ============ 启动 ============ */
+(async function boot(){
+  try{
+    const r = await fetch('data/index.json', {cache:'no-cache'});
+    IDX = await r.json();
+  }catch(e){
+    try{
+      await injectJS('data/local-bundle.js');
+      BUNDLE = window.__ETF_BUNDLE__ || null;
+      if (BUNDLE && BUNDLE.index) IDX = BUNDLE.index;
+    }catch(e2){}
+  }
+  if (!IDX){
+    $('#subinfo').textContent = '数据未就绪';
+    $('#tabbody').innerHTML = '<div class="empty">本地打开时请先运行 <b>run.bat</b> 生成数据（docs/data 目录为空或 local-bundle.js 缺失）</div>';
+    return;
+  }
+  DATES = Object.keys(IDX.days).sort();          // 升序
+  $('#subinfo').innerHTML =
+    `数据更新 <b>${IDX.updated}</b> · 覆盖 <b>${IDX.range[0]}</b> ~ <b>${IDX.range[1]}</b> · 共 <b>${IDX.count}</b> 个交易日 · 48 只 ETF`;
+  const opts = [...DATES].reverse().map(d=>`<option value="${d}">${d} ${wd(d)}</option>`).join('');
+  $('#dStart').innerHTML = opts; $('#dEnd').innerHTML = opts;
+  // 支持 URL 参数: ?start=2026-09-01&end=2026-11-10&tab=rank
+  const QS = new URLSearchParams(location.search);
+  const qs = QS.get('start') || '', qe = QS.get('end') || '', qt = QS.get('tab') || '';
+  if (qs && qe && DATES.includes(qs) && DATES.includes(qe)){
+    $('#dStart').value = qs; $('#dEnd').value = qe;
+    render();
+  }else{
+    quick(10);
+  }
+  if (qt) setTab(qt);
+})();
+
+function quick(n){
+  const end = DATES[DATES.length-1];
+  const start = n>0 ? DATES[Math.max(0, DATES.length-n)] : DATES[0];
+  $('#dStart').value = start; $('#dEnd').value = end;
+  document.querySelectorAll('#quick .chip').forEach(c=>
+    c.classList.toggle('on', c.dataset.n === String(n)));
+  render();
+}
+
+$('#quick').addEventListener('click', e=>{
+  const c = e.target.closest('.chip'); if(!c) return;
+  quick(Number(c.dataset.n));
+});
+function setTab(name){
+  const t = document.querySelector(`.tab[data-t="${name}"]`);
+  if(!t) return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on'); TAB = name; OPEN.clear(); drawTab();
+}
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click', ()=>setTab(t.dataset.t));
+});
+$('#btnGo').addEventListener('click', ()=>{
+  document.querySelectorAll('#quick .chip').forEach(c=>c.classList.remove('on'));
+  render(true);
+});
+$('#dStart').addEventListener('change', ()=>render());
+$('#dEnd').addEventListener('change', ()=>render());
+
+/* ============ 主渲染 ============ */
+async function render(flash){
+  let s = $('#dStart').value, e = $('#dEnd').value;
+  if (s > e) { [s,e] = [e,s]; $('#dStart').value = s; $('#dEnd').value = e; }
+  CUR = {start:s, end:e};
+  const range = DATES.filter(d => d >= s && d <= e);
+  $('#tabbody').innerHTML = '<div class="loading"><span class="spin"></span>正在按区间生成页面…</div>';
+  await Promise.all(range.map(loadDay));
+  const snaps = range.map(d=>cache[d]).filter(Boolean);
+  drawKPI(snaps);
+  drawChart(snaps);
+  drawTab();
+  if (flash){ $('#btnGo').textContent = '✅ 已生成'; setTimeout(()=>$('#btnGo').textContent='🔄 重新生成', 1200); }
+}
+
+function drawKPI(snaps){
+  if(!snaps.length){ $('#kpis').innerHTML=''; return; }
+  const first = snaps[0], last = snaps[snaps.length-1];
+  const idxRet = (first.idx && last.idx) ? (last.idx/first.idx-1)*100 : null;
+  const avgPass = snaps.reduce((a,s)=>a+s.pass,0)/snaps.length;
+  // 常客: 区间内进入"推荐(前2且风控通过)"次数最多的
+  const cnt = {};
+  snaps.forEach(s=>{
+    const top = s.items.filter(x=>x.pass).slice(0,2);
+    top.forEach(x=>cnt[x.n]=(cnt[x.n]||0)+1);
+  });
+  const fav = Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0];
+  const strong = snaps.filter(s=>s.st==='强势').length;
+  const weak = snaps.filter(s=>s.st==='弱势').length;
+
+  $('#kpis').innerHTML = `
+    <div class="kpi"><div class="k">区间交易日</div><div class="v">${snaps.length}</div><div class="x">${first.d} ~ ${last.d}</div></div>
+    <div class="kpi"><div class="k">上证区间涨跌</div><div class="v ${cls(idxRet)}">${sgn(idxRet)}</div><div class="x">${fmt(first.idx)} → ${fmt(last.idx)}</div></div>
+    <div class="kpi"><div class="k">日均风控通过</div><div class="v">${fmt(avgPass,1)}<span class="mini"> /48</span></div><div class="x">最后一交易日 ${last.pass}</div></div>
+    <div class="kpi"><div class="k">最常上榜</div><div class="v" style="font-size:16px">${fav?fav[0]:'—'}</div><div class="x">${fav?fav[1]+' 次进入推荐':'—'}</div></div>
+    <div class="kpi"><div class="k">大盘状态分布</div><div class="v" style="font-size:15px"><span class="up">强${strong}</span> · <span style="color:var(--y)">中${snaps.length-strong-weak}</span> · <span class="down">弱${weak}</span></div><div class="x">按交易日计</div></div>`;
+}
+
+function drawChart(snaps){
+  if(!snaps.length){ $('#chart').innerHTML=''; return; }
+  const W=1120, H=190, PL=34, PR=12, PT=14, PB=34;
+  const iw=W-PL-PR, ih=H-PT-PB;
+  const n=snaps.length;
+  const x=i=> n===1 ? PL+iw/2 : PL + iw*i/(n-1);
+  const y=v=> PT + ih*(1 - v/48);
+  const pts=snaps.map((s,i)=>[x(i),y(s.pass)]);
+  const line=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+  const area=line+` L${pts[pts.length-1][0].toFixed(1)},${PT+ih} L${pts[0][0].toFixed(1)},${PT+ih} Z`;
+  let bg='';
+  const bw = n===1 ? iw : iw/(n-1);
+  snaps.forEach((s,i)=>{
+    const c = s.st==='强势'?'#f85149':s.st==='弱势'?'#3fb950':'#d29922';
+    bg += `<rect x="${(x(i)-(n===1?iw/2:bw/2)).toFixed(1)}" y="${PT}" width="${Math.max(bw,1.2).toFixed(1)}" height="${ih}" fill="${c}" opacity="0.10"/>`;
+  });
+  let grid='';
+  [0,12,24,36,48].forEach(v=>{
+    grid += `<line x1="${PL}" y1="${y(v).toFixed(1)}" x2="${W-PR}" y2="${y(v).toFixed(1)}" stroke="#30363d" stroke-width="1" stroke-dasharray="${v?'3,4':'0'}"/>
+             <text x="${PL-6}" y="${(y(v)+3.5).toFixed(1)}" fill="#8b949e" font-size="9" text-anchor="end">${v}</text>`;
+  });
+  const step = Math.max(1, Math.ceil(n/8));
+  let xlab='';
+  snaps.forEach((s,i)=>{
+    if(i%step===0 || i===n-1)
+      xlab += `<text x="${x(i).toFixed(1)}" y="${H-14}" fill="#8b949e" font-size="9" text-anchor="middle">${s.d.slice(5)}</text>`;
+  });
+  const dots = n<=40 ? pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.4" fill="${snaps[i].st==='强势'?'#f85149':snaps[i].st==='弱势'?'#3fb950':'#d29922'}"/>`).join('') : '';
+  $('#chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+    ${bg}${grid}
+    <path d="${area}" fill="#58a6ff" opacity="0.13"/>
+    <path d="${line}" fill="none" stroke="#58a6ff" stroke-width="1.8" stroke-linejoin="round"/>
+    ${dots}${xlab}
+  </svg>`;
+  $('#charttip').textContent = `${snaps[0].d} ~ ${snaps[snaps.length-1].d}`;
+}
+
+/* ============ Tab 内容 ============ */
+function rangeSnaps(){
+  return DATES.filter(d=>d>=CUR.start && d<=CUR.end).map(d=>cache[d]).filter(Boolean);
+}
+
+function drawTab(){
+  const snaps = rangeSnaps();
+  if(!snaps.length){ $('#tabbody').innerHTML='<div class="empty">该区间没有数据</div>'; return; }
+  if(TAB==='daily') drawDaily(snaps);
+  else if(TAB==='rank') drawRank(snaps);
+  else drawFlip(snaps);
+}
+
+function drawDaily(snaps){
+  const rows = [...snaps].reverse().map(s=>{
+    const holds = s.items.filter(x=>x.pass).slice(0,2);
+    const holdTxt = holds.length
+      ? holds.map(x=>`<span class="hold">${x.n}</span><span class="mini"> ${x.t.toFixed(1)}</span>`).join('　')
+      : '<span class="mini">空仓</span>';
+    const lead = s.items[0];
+    const open = OPEN.has(s.d);
+    let html = `<tr class="dr ${open?'open':''}" data-d="${s.d}">
+      <td class="l"><span class="arw">▶</span> ${s.d} <span class="mini">${wd(s.d)}</span></td>
+      <td>${stTag(s.st)}</td>
+      <td>${s.w}%</td>
+      <td>${holdTxt}</td>
+      <td>${s.pass}<span class="mini">/${s.n}</span></td>
+      <td class="l"><span class="mini">${lead?lead.n+' '+lead.t.toFixed(1)+(lead.pass?'':' ⚠未过风控'):'—'}</span></td>
+      <td class="${cls(s.idx_chg)}">${sgn(s.idx_chg)}</td>
+    </tr>`;
+    if(open) html += `<tr class="sub"><td colspan="7">${detailTable(s)}</td></tr>`;
+    return html;
+  }).join('');
+
+  $('#tabbody').innerHTML = `<div class="tw"><table>
+    <thead><tr>
+      <th class="l">日期</th><th>大盘</th><th>建议仓位</th><th>当日推荐（前2且过风控）</th>
+      <th>通过数</th><th class="l">榜首（仅按总分）</th><th>上证</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="mini" style="padding:10px 4px 2px">💡 点任意一行展开当日 48 只 ETF 完整因子明细</div>`;
+
+  $('#tabbody').querySelectorAll('tr.dr').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const d = tr.dataset.d;
+      if(OPEN.has(d)) OPEN.delete(d); else OPEN.add(d);
+      drawDaily(rangeSnaps());
+    });
+  });
+}
+
+function detailTable(s){
+  const rows = s.items.map(x=>`<tr>
+    <td class="l"><span class="rk ${x.r<=3?'r'+(x.r):''}">${x.r}</span></td>
+    <td class="l">${x.n}</td><td class="mini">${x.c}</td>
+    <td>${fmt(x.p,3)}</td>
+    <td class="${cls(x.dc)}">${sgn(x.dc)}</td>
+    <td class="${cls(x.t5)}">${sgn(x.t5)}</td>
+    <td class="${cls(x.t10)}">${sgn(x.t10)}</td>
+    <td class="${cls(x.m)}">${fmt(x.m,1)}</td>
+    <td>${fmt(x.vp,0)}%</td><td>${fmt(x.vs,1)}</td>
+    <td>${fmt(x.fr,2)}</td><td>${fmt(x.fs,1)}</td>
+    <td><b>${fmt(x.t,2)}</b></td>
+    <td>${x.pass?'<span class="tag ok">通过</span>':'<span class="tag no">未过</span>'}</td>
+  </tr>`).join('');
+  return `<div class="subbox">
+    <div class="subhd">${s.d} ${wd(s.d)} · 大盘 ${s.st}（建议总仓位 ${s.w}%）· 风控通过 ${s.pass}/${s.n} · 上证 ${fmt(s.idx)}（${sgn(s.idx_chg)}）</div>
+    <div class="tw"><table>
+      <thead><tr>
+        <th class="l">#</th><th class="l">名称</th><th class="l">代码</th><th>价格</th>
+        <th>日涨跌</th><th>5日</th><th>10日</th><th>M动量</th>
+        <th>V分位</th><th>V得分</th><th>F比值</th><th>F得分</th><th>综合</th><th>风控</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+
+function drawRank(snaps){
+  const agg = {};
+  snaps.forEach(s=>{
+    const holds = s.items.filter(x=>x.pass).slice(0,2).map(x=>x.c);
+    s.items.forEach(x=>{
+      const a = agg[x.c] || (agg[x.c] = {n:x.n, c:x.c, st:0, sn:0, sp:0, top5:0, hold:0, first:null, last:null, pass:0, best:99});
+      a.st += x.t; a.sn++; a.sp += x.r;
+      if(x.r<=5) a.top5++;
+      if(holds.includes(x.c)) a.hold++;
+      if(x.pass) a.pass++;
+      if(x.r < a.best) a.best = x.r;
+      if(a.first==null) a.first = x.p;
+      a.last = x.p;
+    });
+  });
+  const list = Object.values(agg).map(a=>({
+    ...a, avg:a.st/a.sn, ar:a.sp/a.sn,
+    ret: (a.first && a.last) ? (a.last/a.first-1)*100 : null,
+    inRate: a.sn/snaps.length*100
+  })).sort((x,y)=>y.avg-x.avg);
+
+  const rows = list.map((a,i)=>`<tr>
+    <td class="l"><span class="rk ${i<3?'r'+(i+1):''}">${i+1}</span></td>
+    <td class="l">${a.n}</td>
+    <td><b>${fmt(a.avg,2)}</b></td>
+    <td>${fmt(a.ar,1)}</td>
+    <td class="${cls(a.ret)}">${sgn(a.ret)}</td>
+    <td>${a.hold}<span class="mini">次</span></td>
+    <td>${a.top5}<span class="mini">次</span></td>
+    <td>${a.pass}<span class="mini">/${a.sn}</span></td>
+    <td>${a.best}</td>
+    <td><span class="bar"><i style="width:${Math.min(100,a.inRate).toFixed(0)}%"></i></span> <span class="mini">${a.sn}日</span></td>
+  </tr>`).join('');
+
+  $('#tabbody').innerHTML = `<div class="mini" style="padding:2px 4px 8px">
+      按区间平均综合得分排序 · 共 ${list.length} 只参与统计 · 区间 ${CUR.start} ~ ${CUR.end}（${snaps.length} 个交易日）</div>
+    <div class="tw"><table>
+      <thead><tr><th class="l">#</th><th class="l">名称</th><th>平均总分</th><th>平均排名</th><th>区间涨跌</th>
+      <th>进推荐</th><th>进前5</th><th>过风控</th><th>最好名次</th><th>数据覆盖</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+}
+
+function drawFlip(snaps){
+  // 推荐(前2且过风控)的切换轨迹
+  let last = '';
+  const rows = [];
+  snaps.forEach(s=>{
+    const holds = s.items.filter(x=>x.pass).slice(0,2);
+    const key = holds.map(x=>x.c).join(',');
+    const txt = holds.length ? holds.map(x=>x.n).join(' + ') : '空仓';
+    if(key !== last){
+      rows.push({d:s.d, st:s.st, w:s.w, txt, n:holds.length, key});
+      last = key;
+    }else{
+      rows[rows.length-1].until = s.d;
+    }
+  });
+  if(!rows.length){ $('#tabbody').innerHTML='<div class="empty">无推荐切换</div>'; return; }
+  const html = rows.map((r,i)=>{
+    const prev = i>0 ? rows[i-1] : null;
+    const endD = r.until || (rows[i+1] ? '' : snaps[snaps.length-1].d);
+    return `<tr>
+      <td class="l">${r.d} <span class="mini">${wd(r.d)}</span></td>
+      <td>${stTag(r.st)}</td>
+      <td>${r.w}%</td>
+      <td class="l">${r.n?`<span class="hold">${r.txt}</span>`:'<span class="mini">空仓</span>'}</td>
+      <td class="l mini">${prev? (prev.n? '换出 → 换入':'建仓') : '区间起点'}${endD?'（持续至 '+endD+'）':''}</td>
+    </tr>`;
+  }).join('');
+  $('#tabbody').innerHTML = `<div class="mini" style="padding:2px 4px 8px">
+      只记录"推荐组合发生变化"的时刻 · 区间内共切换 <b>${rows.length}</b> 次 · 共 ${snaps.length} 个交易日</div>
+    <div class="tw"><table>
+      <thead><tr><th class="l">日期</th><th>大盘</th><th>建议仓位</th><th class="l">推荐组合</th><th class="l">变化</th></tr></thead>
+      <tbody>${html}</tbody></table></div>`;
+}
+
+/* ============ 导出本区间为单文件 HTML ============ */
+$('#btnExp').addEventListener('click', async ()=>{
+  const btn = $('#btnExp'); const old = btn.textContent;
+  btn.textContent = '⏳ 生成中…';
+  const snaps = rangeSnaps();
+  if(!snaps.length){ btn.textContent = old; return; }
+
+  // 区块1: 每日概览
+  const daily = [...snaps].reverse().map(s=>{
+    const h = s.items.filter(x=>x.pass).slice(0,2);
+    return `<tr><td class="l">${s.d} ${wd(s.d)}</td><td>${s.st}</td><td>${s.w}%</td>
+      <td class="l">${h.length?h.map(x=>x.n+' '+x.t.toFixed(1)).join('　'):'空仓'}</td>
+      <td>${s.pass}/${s.n}</td><td class="${cls(s.idx_chg)}">${sgn(s.idx_chg)}</td></tr>`;
+  }).join('');
+
+  // 区块2: 排行
+  const agg={};
+  snaps.forEach(s=>{
+    const hl = s.items.filter(x=>x.pass).slice(0,2).map(x=>x.c);
+    s.items.forEach(x=>{
+      const a = agg[x.c] || (agg[x.c]={n:x.n,st:0,sn:0,sp:0,hold:0,first:null,last:null});
+      a.st+=x.t; a.sn++; a.sp+=x.r; if(hl.includes(x.c))a.hold++;
+      if(a.first==null)a.first=x.p; a.last=x.p;
+    });
+  });
+  const rank = Object.values(agg).map(a=>({...a,avg:a.st/a.sn,ar:a.sp/a.sn,
+      ret:(a.first&&a.last)?(a.last/a.first-1)*100:null})).sort((x,y)=>y.avg-x.avg);
+
+  // 区块3: 全部明细
+  const allDetail = [...snaps].reverse().map(s=>`
+    <h3>${s.d} ${wd(s.d)} · ${s.st} · 仓位${s.w}% · 通过${s.pass}/${s.n}</h3>
+    <table><thead><tr><th class="l">#</th><th class="l">名称</th><th>价格</th><th>日涨跌</th><th>M</th><th>V得分</th><th>F得分</th><th>综合</th><th>风控</th></tr></thead>
+    <tbody>${s.items.map(x=>`<tr><td class="l">${x.r}</td><td class="l">${x.n}</td><td>${fmt(x.p,3)}</td>
+      <td class="${cls(x.dc)}">${sgn(x.dc)}</td><td>${fmt(x.m,1)}</td><td>${fmt(x.vs,1)}</td>
+      <td>${fmt(x.fs,1)}</td><td><b>${fmt(x.t,2)}</b></td><td>${x.pass?'通过':'—'}</td></tr>`).join('')}</tbody></table>`).join('');
+
+  const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ETF历史回看 ${CUR.start} ~ ${CUR.end}</title>
+<style>
+body{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#0d1117;color:#c9d1d9;padding:16px;max-width:1200px;margin:0 auto}
+h1{font-size:20px;color:#58a6ff;margin-bottom:6px}h3{font-size:13px;color:#8b949e;margin:18px 0 6px;font-weight:500}
+.sub{font-size:12px;color:#8b949e;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px}
+th{color:#8b949e;font-size:11px;padding:6px;text-align:right;border-bottom:1px solid #30363d;white-space:nowrap}
+th.l,td.l{text-align:left}
+td{padding:6px;text-align:right;border-bottom:1px solid #21262d;white-space:nowrap}
+.up{color:#f85149}.down{color:#3fb950}.flat{color:#8b949e}
+h2{font-size:15px;color:#58a6ff;margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid #30363d}
+.wrap{overflow-x:auto}
+</style></head><body>
+<h1>ETF 历史回看 · 三因子轮动</h1>
+<div class="sub">区间 ${CUR.start} ~ ${CUR.end} · ${snaps.length} 个交易日 · 导出时间 ${new Date().toLocaleString('zh-CN')}<br>
+M动量40% + V相对低位30% + F资金流30% + 三重风控 · 红涨绿跌 · 不构成投资建议</div>
+<h2>① 每日概览</h2><div class="wrap"><table><thead><tr><th class="l">日期</th><th>大盘</th><th>仓位</th><th class="l">当日推荐</th><th>通过</th><th>上证</th></tr></thead><tbody>${daily}</tbody></table></div>
+<h2>② 区间 ETF 排行（按平均总分）</h2><div class="wrap"><table><thead><tr><th class="l">#</th><th class="l">名称</th><th>平均总分</th><th>平均排名</th><th>区间涨跌</th><th>进推荐</th><th>覆盖</th></tr></thead><tbody>
+${rank.map((a,i)=>`<tr><td class="l">${i+1}</td><td class="l">${a.n}</td><td><b>${fmt(a.avg,2)}</b></td><td>${fmt(a.ar,1)}</td><td class="${cls(a.ret)}">${sgn(a.ret)}</td><td>${a.hold}次</td><td>${a.sn}日</td></tr>`).join('')}
+</tbody></table></div>
+<h2>③ 每日全量明细（48 只）</h2>${allDetail}
+</body></html>`;
+
+  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ETF历史回看_${CUR.start}_${CUR.end}.html`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 3000);
+  btn.textContent = '✅ 已导出';
+  setTimeout(()=>btn.textContent = old, 1500);
+});
+</script>
+</body>
+</html>

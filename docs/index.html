@@ -73,6 +73,11 @@ tr.sub td{background:#0f1318;padding:0}
 .rk.r3{background:var(--y);color:#fff;font-weight:600}
 .hold{font-weight:600;color:var(--b)}
 .mini{color:var(--td);font-size:11px}
+.note{background:#1f6feb11;border:1px solid #1f6feb44;border-left:3px solid var(--b);border-radius:8px;padding:11px 13px;font-size:12.5px;color:#a9b4c0;line-height:1.9}
+.note b{color:var(--t)}
+.act{display:inline-block;padding:1px 7px;border-radius:5px;font-size:11px;margin-right:4px;font-weight:600}
+.act.sell{background:#3fb95025;color:#3fb950}
+.act.buy{background:#f8514925;color:#f85149}
 .empty{text-align:center;color:var(--td);padding:36px 10px;font-size:13px}
 .bar{height:4px;border-radius:2px;background:var(--bd);overflow:hidden;width:52px;display:inline-block;vertical-align:middle}
 .bar i{display:block;height:100%;background:var(--b)}
@@ -424,37 +429,81 @@ function drawRank(snaps){
 }
 
 function drawFlip(snaps){
-  // 推荐(前2且过风控)的切换轨迹
-  let last = '';
+  // 推荐(前2且过风控)的切换轨迹 —— 精确算出 换出/换入/保留
+  const NM = {};
+  snaps.forEach(s=>s.items.forEach(x=>NM[x.c]=x.n));
+  let prev = null;                 // 上一个推荐组合的 code 数组(null=区间开始)
   const rows = [];
   snaps.forEach(s=>{
     const holds = s.items.filter(x=>x.pass).slice(0,2);
-    const key = holds.map(x=>x.c).join(',');
-    const txt = holds.length ? holds.map(x=>x.n).join(' + ') : '空仓';
-    if(key !== last){
-      rows.push({d:s.d, st:s.st, w:s.w, txt, n:holds.length, key});
-      last = key;
-    }else{
-      rows[rows.length-1].until = s.d;
+    const codes = holds.map(x=>x.c).sort();
+    const key = codes.join(',');
+    const lastRow = rows[rows.length-1];
+    if (lastRow && lastRow.key === key){        // 组合没变, 只延长持续
+      lastRow.until = s.d; lastRow.len++;
+      return;
     }
+    const out  = prev ? prev.filter(c=>!codes.includes(c)) : [];
+    const inn  = prev ? codes.filter(c=>!prev.includes(c)) : codes.slice();
+    const keep = prev ? codes.filter(c=>prev.includes(c)) : [];
+    rows.push({d:s.d, st:s.st, w:s.w, holds, key, out, inn, keep,
+               until:s.d, len:1, first: prev===null});
+    prev = codes;
   });
   if(!rows.length){ $('#tabbody').innerHTML='<div class="empty">无推荐切换</div>'; return; }
-  const html = rows.map((r,i)=>{
-    const prev = i>0 ? rows[i-1] : null;
-    const endD = r.until || (rows[i+1] ? '' : snaps[snaps.length-1].d);
+
+  const nm = c => NM[c] || c;
+  const html = rows.map(r=>{
+    // "本次操作"列
+    let act = '';
+    if (r.first){
+      act = r.holds.length
+        ? `<span class="act buy">买入</span> ${r.holds.map(h=>h.n).join(' + ')} <span class="mini">（建仓）</span>`
+        : `<span class="mini">区间起点即空仓</span>`;
+    } else if (!r.holds.length){
+      act = r.out.length ? `<span class="act sell">卖出</span> ${r.out.map(nm).join(' + ')} <span class="mini">（转为空仓）</span>` : '<span class="mini">—</span>';
+    } else {
+      const parts = [];
+      if (r.out.length)  parts.push(`<span class="act sell">卖出</span> ${r.out.map(nm).join(' + ')}`);
+      if (r.inn.length)  parts.push(`<span class="act buy">买入</span> ${r.inn.map(nm).join(' + ')}`);
+      if (r.keep.length) parts.push(`<span class="mini">继续持有 ${r.keep.map(nm).join(' + ')}</span>`);
+      act = parts.join('<br>') || '<span class="mini">—</span>';
+    }
+    const dur = r.len > 1
+      ? `持有 ${r.len} 个交易日<br><span class="mini">${r.d} → ${r.until}</span>`
+      : `<span class="mini">仅 1 日</span>`;
     return `<tr>
       <td class="l">${r.d} <span class="mini">${wd(r.d)}</span></td>
       <td>${stTag(r.st)}</td>
       <td>${r.w}%</td>
-      <td class="l">${r.n?`<span class="hold">${r.txt}</span>`:'<span class="mini">空仓</span>'}</td>
-      <td class="l mini">${prev? (prev.n? '换出 → 换入':'建仓') : '区间起点'}${endD?'（持续至 '+endD+'）':''}</td>
+      <td class="l">${r.holds.length?`<span class="hold">${r.holds.map(h=>h.n+' '+h.t.toFixed(1)).join(' · ')}</span>`:'<span class="mini">空仓</span>'}</td>
+      <td class="l">${act}</td>
+      <td class="l">${dur}</td>
     </tr>`;
   }).join('');
-  $('#tabbody').innerHTML = `<div class="mini" style="padding:2px 4px 8px">
-      只记录"推荐组合发生变化"的时刻 · 区间内共切换 <b>${rows.length}</b> 次 · 共 ${snaps.length} 个交易日</div>
+
+  // 换手统计
+  const flips = rows.length - 1;
+  const avgHold = (snaps.length / Math.max(rows.length,1));
+  const maxHold = Math.max(...rows.map(r=>r.len));
+  const emptyDays = snaps.filter(s=>!s.items.filter(x=>x.pass).length).length;
+
+  $('#tabbody').innerHTML = `
+    <div class="note">
+      <b>怎么读这张表</b>：这里记录的是「每日信号推荐」，不是你的真实持仓。<br>
+      当天综合得分 <b>前2名且三重风控通过</b> 的 ETF = 当日推荐；若前2名都没过风控则为空仓。<br>
+      <b>卖出</b> = 昨天在推荐里、今天掉出去了（按信号该卖）　<b>买入</b> = 今天新进入推荐（按信号该买）　<b>继续持有</b> = 两天都在名单里，不用动。
+    </div>
+    <div class="cards" style="margin:12px 0">
+      <div class="kpi"><div class="k">区间换手次数</div><div class="v">${flips}<span class="mini"> 次</span></div><div class="x">推荐组合变化</div></div>
+      <div class="kpi"><div class="k">平均持有</div><div class="v">${fmt(avgHold,1)}<span class="mini"> 日</span></div><div class="x">${snaps.length} 交易日 / ${rows.length} 段</div></div>
+      <div class="kpi"><div class="k">最长持有</div><div class="v">${maxHold}<span class="mini"> 日</span></div><div class="x">单个组合连续在榜</div></div>
+      <div class="kpi"><div class="k">空仓天数</div><div class="v">${emptyDays}<span class="mini"> 日</span></div><div class="x">前2名均未过风控</div></div>
+    </div>
     <div class="tw"><table>
-      <thead><tr><th class="l">日期</th><th>大盘</th><th>建议仓位</th><th class="l">推荐组合</th><th class="l">变化</th></tr></thead>
-      <tbody>${html}</tbody></table></div>`;
+      <thead><tr><th class="l">日期</th><th>大盘</th><th>建议仓位</th><th class="l">当日推荐</th><th class="l">本次操作（按信号）</th><th class="l">持续</th></tr></thead>
+      <tbody>${html}</tbody></table></div>
+    <div class="mini" style="padding:10px 4px 2px">⚠️ 这是逐日重算的信号快照，不是持仓跟踪。真要按它做，换手会相当频繁，记得把佣金和滑点算进去。</div>`;
 }
 
 /* ============ 导出本区间为单文件 HTML ============ */

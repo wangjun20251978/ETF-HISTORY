@@ -131,6 +131,7 @@ tr.sub td{background:#0f1318;padding:0}
   <button class="tab on" data-t="daily">📋 每日概览</button>
   <button class="tab" data-t="rank">🏆 区间 ETF 排行</button>
   <button class="tab" data-t="flip">🔁 推荐切换轨迹</button>
+  <button class="tab" data-t="pace">🐢 调仓节奏对比</button>
 </div>
 <div class="tabbody" id="tabbody"><div class="loading"><span class="spin"></span>加载中…</div></div>
 
@@ -321,6 +322,7 @@ function drawTab(){
   if(!snaps.length){ $('#tabbody').innerHTML='<div class="empty">该区间没有数据</div>'; return; }
   if(TAB==='daily') drawDaily(snaps);
   else if(TAB==='rank') drawRank(snaps);
+  else if(TAB==='pace') drawPace(snaps);
   else drawFlip(snaps);
 }
 
@@ -504,6 +506,163 @@ function drawFlip(snaps){
       <thead><tr><th class="l">日期</th><th>大盘</th><th>建议仓位</th><th class="l">当日推荐</th><th class="l">本次操作（按信号）</th><th class="l">持续</th></tr></thead>
       <tbody>${html}</tbody></table></div>
     <div class="mini" style="padding:10px 4px 2px">⚠️ 这是逐日重算的信号快照，不是持仓跟踪。真要按它做，换手会相当频繁，记得把佣金和滑点算进去。</div>`;
+}
+
+/* ============ 调仓节奏对比：同样信号，不同换手频率，谁的净值更好 ============ */
+let COST_RATE = 0.05;     // 单边交易成本 %（佣金+滑点），可调
+
+const PACE_MODES = [
+  {k:'daily',  name:'严格每日', color:'#58a6ff', desc:'信号一变就换（当前默认口径）'},
+  {k:'min3',   name:'最少持有3日', color:'#d29922', desc:'不满3天不动，满3天后信号变才换'},
+  {k:'min5',   name:'最少持有5日', color:'#a371f7', desc:'不满5天不动'},
+  {k:'min10',  name:'最少持有10日', color:'#3fb950', desc:'不满10天不动'},
+  {k:'weekly', name:'每周一次', color:'#f0883e', desc:'每周首个交易日按信号调仓'},
+];
+
+function weekKey(d){
+  const t = new Date(d + 'T00:00:00');
+  const wd = (t.getDay() + 6) % 7;
+  t.setDate(t.getDate() - wd);
+  return t.toISOString().slice(0, 10);
+}
+const isWeekFirst = (snaps, i) => i === 0 || weekKey(snaps[i].d) !== weekKey(snaps[i-1].d);
+
+function simulate(snaps, mode, costRate){
+  const N = snaps.length;
+  let nav = 1, peak = 1, mdd = 0, costSum = 0;
+  let holds = [], lastReb = 0, rebIdx = [], holdLens = [];
+  const curve = [];
+
+  for (let i = 0; i < N; i++){
+    const s = snaps[i];
+    const w = (s.w || 0) / 100;                      // 建议总仓位
+    // ① 先按昨日收盘后的持仓，吃今日涨跌
+    if (holds.length){
+      let sum = 0;
+      holds.forEach(c=>{
+        const it = s.items.find(x=>x.c===c);
+        sum += it ? it.dc/100 : 0;
+      });
+      nav *= 1 + (sum/holds.length) * w;
+    }
+    // ② 收盘后按规则决定是否调仓
+    const target = s.items.filter(x=>x.pass).slice(0,2).map(x=>x.c);
+    const same = holds.length === target.length && holds.every(c=>target.includes(c));
+    let reb = false;
+    if (i === 0) reb = !same;
+    else if (mode === 'daily') reb = true;
+    else if (mode === 'weekly') reb = isWeekFirst(snaps, i);
+    else reb = ((i - lastReb) >= Number(mode.slice(3))) && !same;
+
+    if (reb && !same){
+      const outN = holds.filter(c=>!target.includes(c)).length;
+      const inN  = target.filter(c=>!holds.includes(c)).length;
+      const unit = w / Math.max(target.length, 1);
+      const c = (outN + inN) * unit * (costRate/100);
+      nav *= (1 - c); costSum += c;
+      if (rebIdx.length) holdLens.push(i - rebIdx[rebIdx.length-1]);
+      rebIdx.push(i);
+      lastReb = i;
+      holds = target;
+    }
+    if (nav > peak) peak = nav;
+    const dd = (nav/peak - 1) * 100;
+    if (dd < mdd) mdd = dd;
+    curve.push(nav);
+  }
+  if (rebIdx.length) holdLens.push(N - rebIdx[rebIdx.length-1]);
+  const avgHold = holdLens.length ? holdLens.reduce((a,b)=>a+b,0)/holdLens.length : 0;
+  return {nav, ret:(nav-1)*100, mdd, flips:rebIdx.length, avgHold, cost:costSum*100, curve};
+}
+
+function paceChart(snaps, results){
+  const W=1120, H=230, PL=44, PR=14, PT=16, PB=34;
+  const iw=W-PL-PR, ih=H-PT-PB, n=snaps.length;
+  const all=[];
+  results.forEach(r=>all.push(...r.curve));
+  const lo=Math.min(...all, 1), hi=Math.max(...all, 1);
+  const pad=(hi-lo)*0.12 || 0.02;
+  const y0=lo-pad, y1=hi+pad;
+  const X=i=> n===1 ? PL+iw/2 : PL+iw*i/(n-1);
+  const Y=v=> PT + ih*(1-(v-y0)/(y1-y0));
+
+  let grid='';
+  for(let k=0;k<=4;k++){
+    const v=y0+(y1-y0)*k/4;
+    grid+=`<line x1="${PL}" y1="${Y(v).toFixed(1)}" x2="${W-PR}" y2="${Y(v).toFixed(1)}" stroke="#30363d" stroke-width="1" stroke-dasharray="3,4"/>
+      <text x="${PL-6}" y="${(Y(v)+3.5).toFixed(1)}" fill="#8b949e" font-size="9" text-anchor="end">${v.toFixed(3)}</text>`;
+  }
+  // 净值1.0基准线
+  grid+=`<line x1="${PL}" y1="${Y(1).toFixed(1)}" x2="${W-PR}" y2="${Y(1).toFixed(1)}" stroke="#6e7681" stroke-width="1"/>`;
+
+  let lines='', legend='';
+  results.forEach((r,idx)=>{
+    const m = PACE_MODES.find(x=>x.k===r.k);
+    const d = r.curve.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ');
+    lines+=`<path d="${d}" fill="none" stroke="${m.color}" stroke-width="2" stroke-linejoin="round" opacity="0.95"/>`;
+    legend+=`<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:11.5px;color:#c9d1d9">
+      <i style="width:14px;height:3px;background:${m.color};display:inline-block;border-radius:2px"></i>${m.name} <b style="color:${r.ret>=0?'#f85149':'#3fb950'}">${r.ret>=0?'+':''}${r.ret.toFixed(1)}%</b></span>`;
+  });
+  const step=Math.max(1,Math.ceil(n/8));
+  let xlab='';
+  snaps.forEach((s,i)=>{ if(i%step===0||i===n-1)
+    xlab+=`<text x="${X(i).toFixed(1)}" y="${H-14}" fill="#8b949e" font-size="9" text-anchor="middle">${s.d.slice(5)}</text>`;});
+
+  return `<div class="chartbox"><div class="ct"><span>净值曲线（起点 1.000，含交易成本）</span></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${grid}${lines}${xlab}</svg>
+    <div style="padding:8px 10px 4px;text-align:center">${legend}</div></div>`;
+}
+
+function drawPace(snaps){
+  const results = PACE_MODES.map(m=>Object.assign(simulate(snaps, m.k, COST_RATE), {k:m.k}));
+  const best = results.reduce((a,b)=> b.ret>a.ret ? b : a, results[0]);
+  const worstCost = results.reduce((a,b)=> b.cost>a.cost ? b : a, results[0]);
+
+  const rows = results.map(r=>{
+    const m = PACE_MODES.find(x=>x.k===r.k);
+    const isBest = r.k===best.k;
+    return `<tr>
+      <td class="l">${isBest?'🏆 ':''}<b>${m.name}</b><br><span class="mini">${m.desc}</span></td>
+      <td>${r.flips}<span class="mini"> 次</span></td>
+      <td>${fmt(r.avgHold,1)}<span class="mini"> 日</span></td>
+      <td class="${cls(r.ret)}"><b>${sgn(r.ret)}</b></td>
+      <td class="down">${fmt(r.mdd,2)}%</td>
+      <td>${fmt(r.cost,2)}%</td>
+      <td>${fmt(r.nav,4)}</td>
+    </tr>`;
+  }).join('');
+
+  $('#tabbody').innerHTML = `
+    <div class="note">
+      <b>为什么做这个</b>：信号每天重算，但<b>不用每天换</b>。这里用同一批历史数据，套不同调仓节奏跑一遍，
+      看<b>多换几次到底赚没赚到钱</b>。<br>
+      算法：按当日建议仓位持股（前2名且过风控，等权），每日吃涨跌，按规则决定是否调仓，每次换仓扣一次成本。
+      <div style="margin-top:9px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>单边交易成本</span>
+        <input id="costIn" type="number" step="0.01" min="0" max="1" value="${COST_RATE}" style="width:78px;padding:5px 8px">
+        <span>%（佣金+滑点，改成 0.1 试试）</span>
+      </div>
+    </div>
+    <div class="cards" style="margin:12px 0">
+      <div class="kpi"><div class="k">换手最省</div><div class="v" style="font-size:15px">${PACE_MODES.find(x=>x.k===results.reduce((a,b)=>b.flips<a.flips?b:a,results[0]).k).name}</div><div class="x">${results.reduce((a,b)=>b.flips<a.flips?b:a,results[0]).flips} 次调仓</div></div>
+      <div class="kpi"><div class="k">收益最高</div><div class="v" style="font-size:15px">${PACE_MODES.find(x=>x.k===best.k).name}</div><div class="x">${sgn(best.ret)} · 回撤 ${fmt(best.mdd,1)}%</div></div>
+      <div class="kpi"><div class="k">最多成本</div><div class="v" style="font-size:15px">${PACE_MODES.find(x=>x.k===worstCost.k).name}</div><div class="x">累计吃掉 ${fmt(worstCost.cost,2)}%</div></div>
+      <div class="kpi"><div class="k">区间</div><div class="v" style="font-size:15px">${snaps.length} 交易日</div><div class="x">${CUR.start} ~ ${CUR.end}</div></div>
+    </div>
+    ${paceChart(snaps, results)}
+    <div class="tw"><table>
+      <thead><tr><th class="l">调仓节奏</th><th>调仓次数</th><th>平均持有</th><th>区间收益</th><th>最大回撤</th><th>累计成本</th><th>最终净值</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div class="mini" style="padding:10px 4px 2px">
+      ⚠️ 这是简化模拟：不含个股止损/网格，不含分红除权，按收盘价成交，只用来比"换手频率"的影响；真实收益会有偏差。
+    </div>`;
+
+  const inp = $('#costIn');
+  if (inp) inp.addEventListener('change', ()=>{
+    const v = parseFloat(inp.value);
+    COST_RATE = isNaN(v) || v < 0 ? 0 : Math.min(v, 1);
+    drawPace(rangeSnaps());
+  });
 }
 
 /* ============ 导出本区间为单文件 HTML ============ */
